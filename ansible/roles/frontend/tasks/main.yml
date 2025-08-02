@@ -1,0 +1,109 @@
+---
+- name: Ensure frontend directory exists
+  file:
+    path: "{{ frontend_dir }}"
+    state: directory
+    owner: "{{ deploy_user }}"
+    group: "{{ deploy_group }}"
+    mode: '0755'
+
+- name: Install frontend dependencies with pnpm
+  command: pnpm install --frozen-lockfile
+  args:
+    chdir: "{{ frontend_dir }}"
+  become_user: "{{ deploy_user }}"
+  register: pnpm_install
+  changed_when: "'Already up to date' not in pnpm_install.stdout"
+
+- name: Create frontend .env file
+  template:
+    src: frontend.env.j2
+    dest: "{{ frontend_dir }}/.env.production"
+    owner: "{{ deploy_user }}"
+    group: "{{ deploy_group }}"
+    mode: '0644'
+  notify: restart frontend
+
+- name: Build frontend application
+  command: pnpm build
+  args:
+    chdir: "{{ frontend_dir }}"
+  environment:
+    NODE_ENV: production
+    NEXT_PUBLIC_API_URL: "{{ next_public_api_url }}"
+  become_user: "{{ deploy_user }}"
+  register: build_result
+  notify: restart frontend
+
+- name: Install PM2 globally
+  npm:
+    name: pm2
+    global: yes
+    state: present
+
+- name: Create PM2 ecosystem config
+  template:
+    src: ecosystem.config.js.j2
+    dest: "{{ frontend_dir }}/ecosystem.config.js"
+    owner: "{{ deploy_user }}"
+    group: "{{ deploy_group }}"
+    mode: '0644'
+
+- name: Stop PM2 processes (if running)
+  command: pm2 delete {{ app_name }}-frontend
+  args:
+    chdir: "{{ frontend_dir }}"
+  become_user: "{{ deploy_user }}"
+  ignore_errors: yes
+  register: pm2_stop
+
+- name: Start frontend with PM2
+  command: pm2 start ecosystem.config.js
+  args:
+    chdir: "{{ frontend_dir }}"
+  become_user: "{{ deploy_user }}"
+  register: pm2_start
+
+- name: Save PM2 process list
+  command: pm2 save
+  become_user: "{{ deploy_user }}"
+
+- name: Generate PM2 startup script
+  command: pm2 startup systemd -u {{ deploy_user }} --hp /home/{{ deploy_user }}
+  register: pm2_startup
+
+- name: Configure PM2 to start on boot
+  command: "{{ pm2_startup.stdout_lines[-1] }}"
+  when: pm2_startup.stdout_lines | length > 0
+
+- name: Create systemd service for PM2
+  template:
+    src: pm2.service.j2
+    dest: /etc/systemd/system/pm2-{{ deploy_user }}.service
+  notify:
+    - reload systemd
+    - restart pm2
+
+- name: Enable PM2 service
+  systemd:
+    name: pm2-{{ deploy_user }}
+    enabled: yes
+    state: started
+    daemon_reload: yes
+
+- name: Check frontend health
+  uri:
+    url: "http://localhost:{{ frontend_port }}"
+    status_code: 200
+  retries: 5
+  delay: 10
+  register: frontend_health
+  until: frontend_health.status == 200
+
+- name: Set up frontend log rotation
+  template:
+    src: frontend-logrotate.j2
+    dest: /etc/logrotate.d/{{ app_name }}-frontend
+    owner: root
+    group: root
+    mode: '0644'

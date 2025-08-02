@@ -1,0 +1,152 @@
+---
+- name: Zero-Downtime Deployment
+  hosts: webservers
+  become: yes
+  serial: "50%"
+  max_fail_percentage: 0
+  
+  vars:
+    deployment_id: "{{ lookup('pipe', 'date +%Y%m%d%H%M%S') }}"
+    rollback_on_failure: true
+  
+  pre_tasks:
+    - name: Check current application status
+      uri:
+        url: "http://localhost:{{ backend_port }}/api/health/"
+        status_code: 200
+      register: pre_deploy_health
+    
+    - name: Create deployment backup
+      include_tasks: backup-current.yml
+      when: rollback_on_failure
+
+  tasks:
+    - name: Put server in maintenance mode
+      file:
+        path: "{{ app_root }}/maintenance.flag"
+        state: touch
+      notify: reload nginx
+      tags:
+        - maintenance
+    
+    - name: Pull latest code
+      git:
+        repo: "{{ app_repo }}"
+        dest: "{{ app_root }}"
+        version: "{{ app_branch }}"
+        force: yes
+      become_user: "{{ deploy_user }}"
+      register: git_deploy
+    
+    - name: Deploy backend updates
+      block:
+        - name: Install Python dependencies
+          pip:
+            requirements: "{{ backend_dir }}/requirements.txt"
+            virtualenv: "{{ backend_dir }}/venv"
+          become_user: "{{ deploy_user }}"
+        
+        - name: Run database migrations
+          django_manage:
+            command: migrate
+            app_path: "{{ backend_dir }}"
+            virtualenv: "{{ backend_dir }}/venv"
+          environment:
+            DJANGO_SETTINGS_MODULE: "{{ django_settings_module }}"
+          become_user: "{{ deploy_user }}"
+        
+        - name: Collect static files
+          django_manage:
+            command: collectstatic
+            app_path: "{{ backend_dir }}"
+            virtualenv: "{{ backend_dir }}/venv"
+          environment:
+            DJANGO_SETTINGS_MODULE: "{{ django_settings_module }}"
+          become_user: "{{ deploy_user }}"
+        
+        - name: Restart backend service
+          systemd:
+            name: "{{ app_name }}-backend"
+            state: restarted
+        
+        - name: Wait for backend to be ready
+          uri:
+            url: "http://localhost:{{ backend_port }}/api/health/"
+            status_code: 200
+          retries: 10
+          delay: 5
+      rescue:
+        - name: Rollback backend on failure
+          include_tasks: rollback-backend.yml
+          when: rollback_on_failure
+    
+    - name: Deploy frontend updates
+      block:
+        - name: Install frontend dependencies
+          command: pnpm install --frozen-lockfile
+          args:
+            chdir: "{{ frontend_dir }}"
+          become_user: "{{ deploy_user }}"
+        
+        - name: Build frontend application
+          command: pnpm build
+          args:
+            chdir: "{{ frontend_dir }}"
+          environment:
+            NODE_ENV: production
+            NEXT_PUBLIC_API_URL: "{{ next_public_api_url }}"
+          become_user: "{{ deploy_user }}"
+        
+        - name: Reload frontend application
+          command: pm2 reload {{ app_name }}-frontend
+          become_user: "{{ deploy_user }}"
+        
+        - name: Wait for frontend to be ready
+          uri:
+            url: "http://localhost:{{ frontend_port }}/"
+            status_code: 200
+          retries: 10
+          delay: 5
+      rescue:
+        - name: Rollback frontend on failure
+          include_tasks: rollback-frontend.yml
+          when: rollback_on_failure
+    
+    - name: Remove maintenance mode
+      file:
+        path: "{{ app_root }}/maintenance.flag"
+        state: absent
+      notify: reload nginx
+      tags:
+        - maintenance
+    
+    - name: Run post-deployment tests
+      uri:
+        url: "{{ item }}"
+        status_code: 200
+      loop:
+        - "http://localhost:{{ frontend_port }}/"
+        - "http://localhost:{{ backend_port }}/api/health/"
+        - "http://localhost:{{ backend_port }}/api/docs/"
+      delegate_to: localhost
+    
+    - name: Tag successful deployment
+      command: git tag -a "deploy-{{ env_name }}-{{ deployment_id }}" -m "Deployment on {{ ansible_date_time.iso8601 }}"
+      args:
+        chdir: "{{ app_root }}"
+      become_user: "{{ deploy_user }}"
+      when: git_deploy.changed
+
+  handlers:
+    - name: reload nginx
+      systemd:
+        name: nginx
+        state: reloaded
+
+  post_tasks:
+    - name: Clean up old deployments
+      include_tasks: cleanup-old-deployments.yml
+    
+    - name: Send deployment success notification
+      debug:
+        msg: "Deployment {{ deployment_id }} completed successfully"

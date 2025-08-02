@@ -1,0 +1,14 @@
+/var/log/{{ app_name }}/*.log {
+    daily
+    missingok
+    rotate 14
+    compress
+    delaycompress
+    notifempty
+    create 0640 {{ deploy_user }} {{ deploy_group }}
+    sharedscripts
+    postrotate
+        systemctl reload {{ app_name }}-backend || true
+        systemctl reload {{ app_name }}-frontend || true
+    endscript
+}

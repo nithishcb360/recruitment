@@ -1,0 +1,11 @@
+[Unit]
+Description={{ app_name }} backend socket
+
+[Socket]
+ListenStream=/run/{{ app_name }}-backend.sock
+SocketUser={{ deploy_user }}
+SocketGroup={{ deploy_group }}
+SocketMode=0660
+
+[Install]
+WantedBy=sockets.target

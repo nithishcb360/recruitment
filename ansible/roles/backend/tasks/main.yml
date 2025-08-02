@@ -1,0 +1,139 @@
+---
+- name: Clone/update repository
+  git:
+    repo: "{{ app_repo }}"
+    dest: "{{ app_root }}"
+    version: "{{ app_branch }}"
+    force: yes
+  become_user: "{{ deploy_user }}"
+  register: git_result
+
+- name: Create backend virtual environment
+  command: python3 -m venv {{ backend_dir }}/venv
+  args:
+    creates: "{{ backend_dir }}/venv"
+  become_user: "{{ deploy_user }}"
+
+- name: Install/upgrade pip in virtual environment
+  pip:
+    name:
+      - pip
+      - setuptools
+      - wheel
+    state: latest
+    virtualenv: "{{ backend_dir }}/venv"
+  become_user: "{{ deploy_user }}"
+
+- name: Install backend Python requirements
+  pip:
+    requirements: "{{ backend_dir }}/requirements.txt"
+    virtualenv: "{{ backend_dir }}/venv"
+  become_user: "{{ deploy_user }}"
+  notify: restart backend
+
+- name: Install additional Python packages
+  pip:
+    name: "{{ python_packages }}"
+    virtualenv: "{{ backend_dir }}/venv"
+  become_user: "{{ deploy_user }}"
+
+- name: Create .env file for backend
+  template:
+    src: backend.env.j2
+    dest: "{{ backend_dir }}/.env"
+    owner: "{{ deploy_user }}"
+    group: "{{ deploy_group }}"
+    mode: '0600'
+  notify: restart backend
+
+- name: Run Django migrations
+  django_manage:
+    command: migrate
+    app_path: "{{ backend_dir }}"
+    virtualenv: "{{ backend_dir }}/venv"
+  environment:
+    DJANGO_SETTINGS_MODULE: "{{ django_settings_module }}"
+  become_user: "{{ deploy_user }}"
+
+- name: Collect static files
+  django_manage:
+    command: collectstatic
+    app_path: "{{ backend_dir }}"
+    virtualenv: "{{ backend_dir }}/venv"
+  environment:
+    DJANGO_SETTINGS_MODULE: "{{ django_settings_module }}"
+  become_user: "{{ deploy_user }}"
+
+- name: Create media directory
+  file:
+    path: "{{ backend_dir }}/media"
+    state: directory
+    owner: "{{ deploy_user }}"
+    group: "{{ deploy_group }}"
+    mode: '0755'
+
+- name: Create Gunicorn systemd service
+  template:
+    src: gunicorn.service.j2
+    dest: /etc/systemd/system/{{ app_name }}-backend.service
+  notify:
+    - reload systemd
+    - restart backend
+
+- name: Create Gunicorn socket file
+  template:
+    src: gunicorn.socket.j2
+    dest: /etc/systemd/system/{{ app_name }}-backend.socket
+  notify:
+    - reload systemd
+    - restart backend
+
+- name: Start and enable Gunicorn socket
+  systemd:
+    name: "{{ app_name }}-backend.socket"
+    state: started
+    enabled: yes
+    daemon_reload: yes
+
+- name: Start and enable Gunicorn service
+  systemd:
+    name: "{{ app_name }}-backend.service"
+    state: started
+    enabled: yes
+
+- name: Create Celery worker service (if needed)
+  template:
+    src: celery-worker.service.j2
+    dest: /etc/systemd/system/{{ app_name }}-celery-worker.service
+  when: enable_celery | default(false)
+  notify:
+    - reload systemd
+    - restart celery
+
+- name: Create Celery beat service (if needed)
+  template:
+    src: celery-beat.service.j2
+    dest: /etc/systemd/system/{{ app_name }}-celery-beat.service
+  when: enable_celery | default(false)
+  notify:
+    - reload systemd
+    - restart celery
+
+- name: Start Celery services (if needed)
+  systemd:
+    name: "{{ item }}"
+    state: started
+    enabled: yes
+  loop:
+    - "{{ app_name }}-celery-worker"
+    - "{{ app_name }}-celery-beat"
+  when: enable_celery | default(false)
+
+- name: Run Django health check
+  uri:
+    url: "http://localhost:{{ backend_port }}/api/health/"
+    status_code: 200
+  retries: 5
+  delay: 10
+  register: health_check
+  until: health_check.status == 200

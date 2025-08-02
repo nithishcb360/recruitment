@@ -1,0 +1,141 @@
+---
+- name: Rollback Deployment
+  hosts: webservers
+  become: yes
+  serial: 1
+  
+  vars_prompt:
+    - name: rollback_version
+      prompt: "Enter the version/tag to rollback to (or 'latest' for last backup)"
+      private: no
+  
+  tasks:
+    - name: Put application in maintenance mode
+      file:
+        path: "{{ app_root }}/maintenance.flag"
+        state: touch
+      notify: reload nginx
+    
+    - name: Stop application services
+      systemd:
+        name: "{{ item }}"
+        state: stopped
+      loop:
+        - "{{ app_name }}-backend"
+        - "pm2-{{ deploy_user }}"
+    
+    - name: Rollback using Git
+      block:
+        - name: Fetch all tags
+          git:
+            repo: "{{ app_repo }}"
+            dest: "{{ app_root }}"
+            update: no
+          become_user: "{{ deploy_user }}"
+        
+        - name: Checkout specific version
+          command: git checkout {{ rollback_version }}
+          args:
+            chdir: "{{ app_root }}"
+          become_user: "{{ deploy_user }}"
+          when: rollback_version != 'latest'
+      when: rollback_version != 'latest'
+    
+    - name: Rollback from backup
+      block:
+        - name: Find latest backup
+          find:
+            paths: "{{ backup_dir }}"
+            file_type: directory
+            recurse: no
+          register: backups
+        
+        - name: Set latest backup path
+          set_fact:
+            latest_backup: "{{ backups.files | sort(attribute='mtime') | last }}"
+        
+        - name: Restore database
+          postgresql_db:
+            name: "{{ db_name }}"
+            state: restore
+            target: "{{ latest_backup.path }}/database.sql.gz"
+            login_host: "{{ db_host }}"
+            login_user: "{{ db_user }}"
+            login_password: "{{ db_password }}"
+          become_user: postgres
+        
+        - name: Restore application files
+          unarchive:
+            src: "{{ latest_backup.path }}/application.tar.gz"
+            dest: "{{ app_root }}"
+            remote_src: yes
+          become_user: "{{ deploy_user }}"
+      when: rollback_version == 'latest'
+    
+    - name: Reinstall backend dependencies
+      pip:
+        requirements: "{{ backend_dir }}/requirements.txt"
+        virtualenv: "{{ backend_dir }}/venv"
+      become_user: "{{ deploy_user }}"
+    
+    - name: Run migrations (backwards if needed)
+      django_manage:
+        command: migrate
+        app_path: "{{ backend_dir }}"
+        virtualenv: "{{ backend_dir }}/venv"
+      environment:
+        DJANGO_SETTINGS_MODULE: "{{ django_settings_module }}"
+      become_user: "{{ deploy_user }}"
+    
+    - name: Rebuild frontend
+      block:
+        - name: Install frontend dependencies
+          command: pnpm install --frozen-lockfile
+          args:
+            chdir: "{{ frontend_dir }}"
+          become_user: "{{ deploy_user }}"
+        
+        - name: Build frontend
+          command: pnpm build
+          args:
+            chdir: "{{ frontend_dir }}"
+          environment:
+            NODE_ENV: production
+          become_user: "{{ deploy_user }}"
+    
+    - name: Start application services
+      systemd:
+        name: "{{ item }}"
+        state: started
+      loop:
+        - "{{ app_name }}-backend"
+        - "pm2-{{ deploy_user }}"
+    
+    - name: Remove maintenance mode
+      file:
+        path: "{{ app_root }}/maintenance.flag"
+        state: absent
+      notify: reload nginx
+    
+    - name: Verify rollback
+      uri:
+        url: "{{ item }}"
+        status_code: 200
+      loop:
+        - "http://localhost:{{ backend_port }}/api/health/"
+        - "http://localhost:{{ frontend_port }}/"
+      retries: 5
+      delay: 10
+    
+    - name: Create rollback record
+      lineinfile:
+        path: "{{ app_root }}/rollback.log"
+        line: "{{ ansible_date_time.iso8601 }} - Rolled back to {{ rollback_version }}"
+        create: yes
+      become_user: "{{ deploy_user }}"
+  
+  handlers:
+    - name: reload nginx
+      systemd:
+        name: nginx
+        state: reloaded

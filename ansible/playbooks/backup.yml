@@ -1,0 +1,131 @@
+---
+- name: Backup Recruitment Platform
+  hosts: webservers[0]
+  become: yes
+  gather_facts: yes
+  
+  vars:
+    backup_timestamp: "{{ lookup('pipe', 'date +%Y%m%d_%H%M%S') }}"
+    backup_path: "{{ backup_dir }}/{{ backup_timestamp }}"
+    backup_retention_days: 30
+  
+  tasks:
+    - name: Create backup directory
+      file:
+        path: "{{ backup_path }}"
+        state: directory
+        owner: "{{ deploy_user }}"
+        group: "{{ deploy_group }}"
+        mode: '0750'
+    
+    - name: Backup database
+      block:
+        - name: Create database backup
+          postgresql_db:
+            name: "{{ db_name }}"
+            state: dump
+            target: "{{ backup_path }}/database.sql.gz"
+            login_host: "{{ db_host }}"
+            login_user: "{{ db_user }}"
+            login_password: "{{ db_password }}"
+          become_user: postgres
+        
+        - name: Compress database backup
+          archive:
+            path: "{{ backup_path }}/database.sql"
+            dest: "{{ backup_path }}/database.sql.gz"
+            format: gz
+            remove: yes
+          when: false  # Already compressed by pg_dump
+    
+    - name: Backup application files
+      block:
+        - name: Create application backup
+          archive:
+            path:
+              - "{{ backend_dir }}/.env"
+              - "{{ backend_dir }}/media"
+              - "{{ frontend_dir }}/.env.production"
+              - "{{ app_root }}/custom_configs"
+            dest: "{{ backup_path }}/application.tar.gz"
+            format: gz
+          become_user: "{{ deploy_user }}"
+    
+    - name: Backup Nginx configuration
+      archive:
+        path:
+          - /etc/nginx/sites-available/{{ app_name }}
+          - /etc/nginx/nginx.conf
+        dest: "{{ backup_path }}/nginx_config.tar.gz"
+        format: gz
+    
+    - name: Create backup metadata
+      copy:
+        content: |
+          Backup Information
+          ==================
+          Timestamp: {{ ansible_date_time.iso8601 }}
+          Environment: {{ env_name }}
+          Git Commit: {{ lookup('pipe', 'cd ' + app_root + ' && git rev-parse HEAD') }}
+          Git Branch: {{ app_branch }}
+          
+          Contents:
+          - database.sql.gz: PostgreSQL database dump
+          - application.tar.gz: Application files and media
+          - nginx_config.tar.gz: Nginx configuration
+          
+          Restore Instructions:
+          1. Extract all archives
+          2. Restore database: psql {{ db_name }} < database.sql
+          3. Copy application files to {{ app_root }}
+          4. Restore Nginx configuration
+          5. Restart all services
+        dest: "{{ backup_path }}/README.txt"
+    
+    - name: Create backup manifest
+      set_fact:
+        backup_manifest:
+          timestamp: "{{ backup_timestamp }}"
+          size: "{{ lookup('pipe', 'du -sh ' + backup_path + ' | cut -f1') }}"
+          files:
+            - database.sql.gz
+            - application.tar.gz
+            - nginx_config.tar.gz
+    
+    - name: Save backup manifest
+      copy:
+        content: "{{ backup_manifest | to_nice_json }}"
+        dest: "{{ backup_path }}/manifest.json"
+    
+    - name: Clean up old backups
+      find:
+        paths: "{{ backup_dir }}"
+        age: "{{ backup_retention_days }}d"
+        recurse: no
+        file_type: directory
+      register: old_backups
+    
+    - name: Remove old backups
+      file:
+        path: "{{ item.path }}"
+        state: absent
+      loop: "{{ old_backups.files }}"
+      when: old_backups.files | length > 0
+    
+    - name: Upload backup to S3 (if configured)
+      aws_s3:
+        bucket: "{{ backup_s3_bucket }}"
+        object: "{{ app_name }}/{{ env_name }}/{{ backup_timestamp }}.tar.gz"
+        src: "{{ backup_path }}"
+        mode: put
+      when: 
+        - backup_s3_bucket is defined
+        - backup_to_s3 | default(false)
+    
+    - name: Display backup summary
+      debug:
+        msg: |
+          Backup completed successfully!
+          Location: {{ backup_path }}
+          Size: {{ backup_manifest.size }}
+          Files: {{ backup_manifest.files | join(', ') }}

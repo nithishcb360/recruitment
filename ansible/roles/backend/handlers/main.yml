@@ -1,0 +1,18 @@
+---
+- name: reload systemd
+  systemd:
+    daemon_reload: yes
+
+- name: restart backend
+  systemd:
+    name: "{{ app_name }}-backend"
+    state: restarted
+
+- name: restart celery
+  systemd:
+    name: "{{ item }}"
+    state: restarted
+  loop:
+    - "{{ app_name }}-celery-worker"
+    - "{{ app_name }}-celery-beat"
+  when: enable_celery | default(false)

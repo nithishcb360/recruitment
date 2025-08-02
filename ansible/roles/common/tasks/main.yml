@@ -1,0 +1,120 @@
+---
+- name: Update apt cache
+  apt:
+    update_cache: yes
+    cache_valid_time: 3600
+
+- name: Install system packages
+  apt:
+    name: "{{ system_packages }}"
+    state: present
+
+- name: Create deploy user
+  user:
+    name: "{{ deploy_user }}"
+    groups: sudo
+    append: yes
+    shell: /bin/bash
+    createhome: yes
+    state: present
+
+- name: Set up authorized keys for deploy user
+  authorized_key:
+    user: "{{ deploy_user }}"
+    key: "{{ lookup('file', 'files/deploy_key.pub') }}"
+    state: present
+  when: deploy_ssh_key is defined
+
+- name: Allow deploy user sudo without password
+  lineinfile:
+    path: /etc/sudoers.d/{{ deploy_user }}
+    line: "{{ deploy_user }} ALL=(ALL) NOPASSWD:ALL"
+    create: yes
+    validate: 'visudo -cf %s'
+
+- name: Configure firewall rules
+  ufw:
+    rule: allow
+    port: "{{ item }}"
+    proto: tcp
+  loop:
+    - 22
+    - 80
+    - 443
+  notify: restart ufw
+
+- name: Enable UFW
+  ufw:
+    state: enabled
+    policy: deny
+    direction: incoming
+
+- name: Set timezone
+  timezone:
+    name: UTC
+
+- name: Configure sysctl for performance
+  sysctl:
+    name: "{{ item.name }}"
+    value: "{{ item.value }}"
+    sysctl_set: yes
+    state: present
+    reload: yes
+  loop:
+    - { name: "net.core.somaxconn", value: "65535" }
+    - { name: "net.ipv4.tcp_max_syn_backlog", value: "65535" }
+    - { name: "net.ipv4.ip_local_port_range", value: "1024 65535" }
+    - { name: "net.ipv4.tcp_tw_reuse", value: "1" }
+
+- name: Create application directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ deploy_user }}"
+    group: "{{ deploy_group }}"
+    mode: '0755'
+  loop:
+    - "{{ app_root }}"
+    - "{{ backup_dir }}"
+    - /var/log/{{ app_name }}
+
+- name: Configure log rotation
+  template:
+    src: logrotate.j2
+    dest: /etc/logrotate.d/{{ app_name }}
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Install Python build dependencies
+  apt:
+    name:
+      - python3-dev
+      - python3-pip
+      - python3-venv
+      - libpq-dev
+      - libssl-dev
+      - libffi-dev
+    state: present
+
+- name: Install Node.js repository
+  shell: |
+    curl -fsSL https://deb.nodesource.com/setup_{{ nodejs_version }} | sudo -E bash -
+  args:
+    creates: /etc/apt/sources.list.d/nodesource.list
+
+- name: Install Node.js
+  apt:
+    name: nodejs
+    state: present
+    update_cache: yes
+
+- name: Install pnpm globally
+  npm:
+    name: pnpm
+    global: yes
+    state: present
+
+- name: Set up monitoring agent (if enabled)
+  include_tasks: monitoring.yml
+  when: enable_monitoring | default(false)

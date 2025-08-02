@@ -1,0 +1,27 @@
+module.exports = {
+  apps: [{
+    name: '{{ app_name }}-frontend',
+    script: 'node_modules/.bin/next',
+    args: 'start -p {{ frontend_port }}',
+    instances: {{ frontend_instances }},
+    exec_mode: 'cluster',
+    autorestart: true,
+    watch: false,
+    max_memory_restart: '1G',
+    env: {
+      NODE_ENV: 'production',
+      PORT: {{ frontend_port }}
+    },
+    error_file: '/var/log/{{ app_name }}/frontend-error.log',
+    out_file: '/var/log/{{ app_name }}/frontend-out.log',
+    log_file: '/var/log/{{ app_name }}/frontend-combined.log',
+    time: true,
+    kill_timeout: 5000,
+    wait_ready: true,
+    listen_timeout: 5000,
+    min_uptime: '10s',
+    max_restarts: 10,
+    restart_delay: 4000,
+    interpreter_args: '--max-old-space-size=2048'
+  }]
+}

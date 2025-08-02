@@ -1,0 +1,48 @@
+---
+- name: Install Certbot
+  apt:
+    name:
+      - certbot
+      - python3-certbot-nginx
+    state: present
+    update_cache: yes
+
+- name: Create webroot directory for Certbot
+  file:
+    path: /var/www/certbot
+    state: directory
+    owner: www-data
+    group: www-data
+    mode: '0755'
+
+- name: Check if SSL certificate exists
+  stat:
+    path: /etc/letsencrypt/live/{{ domain_name }}/fullchain.pem
+  register: ssl_cert
+
+- name: Generate SSL certificate
+  command: |
+    certbot certonly 
+    --nginx 
+    --non-interactive 
+    --agree-tos 
+    --email {{ ssl_email }} 
+    --domains {{ domain_name }},www.{{ domain_name }}
+  when: 
+    - not ssl_cert.stat.exists
+    - use_ssl | default(true)
+  notify: restart nginx
+
+- name: Set up auto-renewal cron job
+  cron:
+    name: "SSL certificate renewal"
+    special_time: daily
+    job: "certbot renew --quiet --post-hook 'systemctl reload nginx'"
+    user: root
+  when: use_ssl | default(true)
+
+- name: Generate DH parameters
+  command: openssl dhparam -out /etc/ssl/certs/dhparam.pem 2048
+  args:
+    creates: /etc/ssl/certs/dhparam.pem
+  when: use_ssl | default(true)

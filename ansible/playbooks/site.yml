@@ -1,0 +1,128 @@
+---
+- name: Deploy Recruitment Platform - Full Stack
+  hosts: all
+  become: yes
+  gather_facts: yes
+  
+  pre_tasks:
+    - name: Verify Ansible version
+      assert:
+        that: "ansible_version.full is version('2.9', '>=')"
+        msg: "This playbook requires Ansible 2.9 or higher"
+    
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+      when: ansible_os_family == "Debian"
+
+- name: Configure common dependencies
+  hosts: all
+  become: yes
+  roles:
+    - common
+
+- name: Set up database servers
+  hosts: database
+  become: yes
+  roles:
+    - postgresql
+  tags:
+    - database
+
+- name: Set up Redis servers
+  hosts: redis
+  become: yes
+  tasks:
+    - name: Install Redis
+      apt:
+        name: redis-server
+        state: present
+    
+    - name: Configure Redis
+      template:
+        src: redis.conf.j2
+        dest: /etc/redis/redis.conf
+      notify: restart redis
+    
+    - name: Start Redis
+      systemd:
+        name: redis
+        state: started
+        enabled: yes
+  
+  handlers:
+    - name: restart redis
+      systemd:
+        name: redis
+        state: restarted
+  tags:
+    - redis
+
+- name: Deploy backend application
+  hosts: webservers
+  become: yes
+  roles:
+    - backend
+  tags:
+    - backend
+    - app
+
+- name: Deploy frontend application
+  hosts: webservers
+  become: yes
+  roles:
+    - frontend
+  tags:
+    - frontend
+    - app
+
+- name: Configure Nginx and SSL
+  hosts: webservers
+  become: yes
+  roles:
+    - nginx
+    - ssl
+  tags:
+    - nginx
+    - ssl
+
+- name: Post-deployment tasks
+  hosts: webservers
+  become: yes
+  tasks:
+    - name: Run application health checks
+      uri:
+        url: "https://{{ domain_name }}/health"
+        status_code: 200
+        validate_certs: yes
+      retries: 5
+      delay: 10
+      delegate_to: localhost
+      run_once: true
+    
+    - name: Send deployment notification
+      mail:
+        to: "{{ admin_email | default('admin@' + domain_name) }}"
+        subject: "Deployment Complete - {{ app_name }}"
+        body: |
+          Deployment of {{ app_name }} completed successfully.
+          
+          Environment: {{ env_name }}
+          Version: {{ app_branch }}
+          Time: {{ ansible_date_time.iso8601 }}
+          
+          Application URL: https://{{ domain_name }}
+          API Documentation: https://{{ domain_name }}/api/docs/
+      delegate_to: localhost
+      run_once: true
+      when: send_notifications | default(false)
+    
+    - name: Create deployment marker
+      file:
+        path: "{{ app_root }}/.deployment"
+        state: touch
+        modification_time: preserve
+        access_time: preserve
+  tags:
+    - post-deploy

@@ -1,0 +1,13 @@
+---
+- name: restart frontend
+  command: pm2 reload {{ app_name }}-frontend
+  become_user: "{{ deploy_user }}"
+
+- name: restart pm2
+  systemd:
+    name: pm2-{{ deploy_user }}
+    state: restarted
+
+- name: reload systemd
+  systemd:
+    daemon_reload: yes
