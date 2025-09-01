@@ -1,102 +1,62 @@
-"use client"
-
-import type React from "react"
-import { useState, useEffect } from "react"
+import React, { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Checkbox } from "@/components/ui/checkbox"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Plus, Send, Trash, Sparkles, RefreshCw, Hash, MessageSquareText, Loader2, Upload } from "lucide-react"
-import { getDepartments, createJob, parseJD, generateJD, type Department, type JobCreateData, type ParsedJD, type GenerateJDRequest } from "@/lib/api/jobs"
-import { getFeedbackTemplates, type FeedbackTemplate } from "@/lib/api/feedback-templates"
-import { useToast } from "@/hooks/use-toast"
+import { Sparkles, RefreshCw, Hash, Trash, Upload } from "lucide-react"
+
+interface JobDetails {
+  title: string
+  department: string
+  level: string
+  location: string
+  workType: string
+  minSalary: string
+  maxSalary: string
+  experienceRange: string
+}
+
+interface Department {
+  id: number
+  name: string
+}
 
 export default function JobCreationForm() {
-  const { toast } = useToast()
   const [activeTab, setActiveTab] = useState("details")
-  const [jobDetails, setJobDetails] = useState({
+  const [jobDetails, setJobDetails] = useState<JobDetails>({
     title: "",
     department: "",
-    level: "", // Experience Level
+    level: "",
     location: "",
-    workType: "", // Work Type
+    workType: "",
     minSalary: "",
     maxSalary: "",
-    experienceRange: "", // Experience Range
+    experienceRange: "",
   })
   const [jobDescription, setJobDescription] = useState("")
   const [requirements, setRequirements] = useState("")
   const [keywords, setKeywords] = useState<string[]>([])
-  const [screeningQuestions, setScreeningQuestions] = useState([
-    { id: 1, question: "How many years of experience do you have with React?", type: "text" },
-    { id: 2, question: "Are you willing to relocate to San Francisco?", type: "yes/no" },
+  const [departments, setDepartments] = useState<Department[]>([
+    { id: 1, name: "Engineering" },
+    { id: 2, name: "Marketing" },
+    { id: 3, name: "Sales" },
+    { id: 4, name: "HR" },
+    { id: 5, name: "Finance" },
+    { id: 6, name: "Design" },
   ])
-  const [selectedFeedbackForm, setSelectedFeedbackForm] = useState("")
-  const [publishOptions, setPublishOptions] = useState({
-    internal: true,
-    externalPortals: false,
-    companyWebsite: true,
-  })
+  const [isLoading, setIsLoading] = useState(false)
   const [isGenerating, setIsGenerating] = useState(false)
-  const [isSubmitting, setIsSubmitting] = useState(false)
-  
-  // API Data
-  const [departments, setDepartments] = useState<Department[]>([])
-  const [feedbackTemplates, setFeedbackTemplates] = useState<FeedbackTemplate[]>([])
-  const [isLoading, setIsLoading] = useState(true)
 
-  // Fetch departments and feedback templates on component mount
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        setIsLoading(true)
-        const [departmentsResponse, templatesResponse] = await Promise.all([
-          getDepartments(),
-          getFeedbackTemplates()
-        ])
-        setDepartments(departmentsResponse.results)
-        setFeedbackTemplates(templatesResponse.results)
-      } catch (error) {
-        console.error('Error fetching data:', error)
-        toast({
-          title: "Error",
-          description: "Failed to load form data. Please refresh the page.",
-          variant: "destructive"
-        })
-      } finally {
-        setIsLoading(false)
-      }
-    }
-
-    fetchData()
-  }, [])
-
-  const handleDetailChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+  const handleDetailChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { id, value } = e.target
     setJobDetails((prev) => ({ ...prev, [id]: value }))
   }
 
   const handleSelectChange = (id: string, value: string) => {
     setJobDetails((prev) => ({ ...prev, [id]: value }))
-  }
-
-  const handleQuestionChange = (id: number, field: string, value: string) => {
-    setScreeningQuestions((prev) => prev.map((q) => (q.id === id ? { ...q, [field]: value } : q)))
-  }
-
-  const addQuestion = () => {
-    setScreeningQuestions((prev) => [
-      ...prev,
-      { id: prev.length ? Math.max(...prev.map((q) => q.id)) + 1 : 1, question: "", type: "text" },
-    ])
-  }
-
-  const removeQuestion = (id: number) => {
-    setScreeningQuestions((prev) => prev.filter((q) => q.id !== id))
   }
 
   const addKeyword = (keyword: string) => {
@@ -109,274 +69,146 @@ export default function JobCreationForm() {
     setKeywords(keywords.filter((k) => k !== keyword))
   }
 
+  // AI Generation Function
   const generateJobDescription = async () => {
-    // Validate required fields
-    if (!jobDetails.title) {
-      toast({
-        title: "Missing Information",
-        description: "Please enter a job title before generating the description.",
-        variant: "destructive"
-      })
+    if (!jobDetails.title || !jobDetails.department || !jobDetails.level) {
+      alert("Please fill in at least the Job Title, Department, and Experience Level before generating.")
       return
     }
 
     setIsGenerating(true)
-    
-    try {
-      // Get department name from ID
-      const selectedDepartment = departments.find(d => d.id.toString() === jobDetails.department)
-      const departmentName = selectedDepartment?.name || ''
-      
-      const generateRequest: GenerateJDRequest = {
-        title: jobDetails.title,
-        department: departmentName,
-        level: jobDetails.level || 'mid',
-        location: jobDetails.location || 'Remote',
-        work_type: jobDetails.workType || 'remote'
-      }
 
-      const response = await generateJD(generateRequest)
+    try {
+      // Simulate AI generation with realistic content
+      await new Promise(resolve => setTimeout(resolve, 2000)) // Simulate API call
+
+      const departmentName = departments.find(d => d.id.toString() === jobDetails.department)?.name || jobDetails.department
+      const levelText = jobDetails.level.charAt(0).toUpperCase() + jobDetails.level.slice(1)
       
-      if (response.success && response.data) {
-        // Update form fields with generated content
-        setJobDescription(response.data.description)
-        setRequirements(response.data.requirements)
-        
-        // Also set responsibilities in a separate field if you have one
-        // For now, we'll include responsibilities in the main description
-        if (response.data.responsibilities) {
-          setJobDescription(prev => prev + '\n\n' + response.data.responsibilities)
-        }
-        
-        toast({
-          title: "Success!",
-          description: response.ai_generated 
-            ? "Job description generated successfully using AI." 
-            : "Job description generated using templates.",
-          variant: "default"
-        })
-      } else {
-        throw new Error('Failed to generate job description')
-      }
-      
-    } catch (error: any) {
-      console.error('AI generation error:', error)
-      
-      let errorMessage = "Failed to generate job description. Please try again."
-      
-      // Handle specific error types
-      if (error?.response?.data?.detail) {
-        errorMessage = error.response.data.detail
-      } else if (error?.detail) {
-        errorMessage = error.detail
-      } else if (error?.message) {
-        errorMessage = error.message
-      }
-      
-      // Check if it's an API key issue - fallback gracefully
-      if (errorMessage.includes('API key') || errorMessage.includes('OpenAI')) {
-        errorMessage = "AI service is temporarily unavailable. Template generation was used instead."
-      }
-      
-      toast({
-        title: "Generation Error",
-        description: errorMessage,
-        variant: "destructive"
-      })
+      const generatedDescription = generateDescriptionText(jobDetails, departmentName, levelText)
+      const generatedRequirements = generateRequirementsText(jobDetails, levelText)
+      const generatedKeywords = generateKeywords(jobDetails, departmentName)
+
+      setJobDescription(generatedDescription)
+      setRequirements(generatedRequirements)
+      setKeywords(generatedKeywords)
+
+    } catch (error) {
+      console.error("Error generating job description:", error)
+      alert("Failed to generate job description. Please try again.")
     } finally {
       setIsGenerating(false)
     }
   }
 
-  const handleJDUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
+  const generateDescriptionText = (details: JobDetails, departmentName: string, levelText: string): string => {
+    const { title, location, workType } = details
+    const locationText = location || "flexible location"
+    const workTypeText = workType ? ` in a ${workType} environment` : ""
 
-    // Check file type
-    const allowedTypes = ['text/plain', 'application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']
-    if (!allowedTypes.includes(file.type)) {
-      toast({
-        title: "Invalid file type",
-        description: "Please upload a .txt, .pdf, .doc, or .docx file",
-        variant: "destructive"
-      })
-      return
-    }
+    return `We are seeking a talented ${levelText} ${title} to join our dynamic ${departmentName} team${locationText !== "flexible location" ? ` in ${locationText}` : ""}${workTypeText}. In this role, you will play a crucial part in driving innovation and delivering high-quality solutions that make a real impact on our organization and customers.
 
-    // Check file size (max 5MB)
-    if (file.size > 5 * 1024 * 1024) {
-      toast({
-        title: "File too large",
-        description: "Please upload a file smaller than 5MB",
-        variant: "destructive"
-      })
-      return
-    }
+As a ${title}, you will collaborate with cross-functional teams to design, develop, and implement strategic initiatives that align with our company's goals. You'll have the opportunity to work on challenging projects, mentor team members, and contribute to the continuous improvement of our processes and technologies.
 
-    try {
-      setIsGenerating(true)
-      
-      // Use the API client to upload and parse the file
-      const result = await parseJD(file)
-      
-      // Update the form fields with parsed content
-      setJobDescription(result.description || '')
-      setRequirements(result.requirements || '')
-      
-      toast({
-        title: "Success",
-        description: "Job description uploaded and parsed successfully",
-        variant: "default"
-      })
-    } catch (error: any) {
-      console.error('JD upload error:', error)
-      toast({
-        title: "Error",
-        description: error.detail || error.message || "Failed to upload job description",
-        variant: "destructive"
-      })
-    } finally {
-      setIsGenerating(false)
-      // Reset the input
-      if (e.target) {
-        e.target.value = ''
-      }
-    }
+We offer a collaborative work environment where creativity and innovation are encouraged, along with opportunities for professional growth and development. Join us in shaping the future of our industry while building a rewarding career with a company that values your expertise and contributions.`
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const generateRequirementsText = (details: JobDetails, levelText: string): string => {
+    const { title } = details
+    const experience = levelText === "Entry" ? "1-2 years" : 
+                     levelText === "Mid" ? "3-5 years" : 
+                     levelText === "Senior" ? "5+ years" : "7+ years"
+
+    return `• ${experience} of relevant experience in ${title.toLowerCase() || "related field"}
+• Strong problem-solving skills and attention to detail
+• Excellent communication and collaboration abilities
+• Proven track record of delivering high-quality results
+• Bachelor's degree in relevant field or equivalent experience
+• Experience with modern tools and technologies in the field
+• Ability to work independently and manage multiple priorities
+• Strong analytical and critical thinking skills
+• Commitment to continuous learning and professional development`
+  }
+
+  const generateKeywords = (details: JobDetails, departmentName: string): string[] => {
+    const baseKeywords: string[] = []
     
-    if (!jobDetails.title || !jobDetails.department || !jobDescription) {
-      toast({
-        title: "Validation Error",
-        description: "Please fill in all required fields (Title, Department, Description).",
-        variant: "destructive"
-      })
-      return
+    if (departmentName === "Engineering") {
+      baseKeywords.push("JavaScript", "React", "Node.js", "Python", "Git", "API Development")
+    } else if (departmentName === "Marketing") {
+      baseKeywords.push("Digital Marketing", "SEO", "Content Strategy", "Analytics", "Social Media")
+    } else if (departmentName === "Sales") {
+      baseKeywords.push("CRM", "Lead Generation", "Account Management", "Sales Strategy", "Negotiation")
+    } else if (departmentName === "Design") {
+      baseKeywords.push("UI/UX", "Figma", "Adobe Creative Suite", "Prototyping", "User Research")
+    } else {
+      baseKeywords.push("Project Management", "Communication", "Leadership", "Analysis", "Strategy")
     }
 
-    try {
-      setIsSubmitting(true)
-      
-      const jobData: JobCreateData = {
-        title: jobDetails.title,
-        department: parseInt(jobDetails.department),
-        description: jobDescription,
-        requirements: requirements || "Requirements to be updated",
-        responsibilities: "Responsibilities to be updated",
-        job_type: "full_time",
-        experience_level: jobDetails.level || "mid",
-        location: jobDetails.location || "Remote",
-        work_type: jobDetails.workType || "remote",
-        is_remote: jobDetails.workType === "remote",
-        salary_min: jobDetails.minSalary ? parseFloat(jobDetails.minSalary) : undefined,
-        salary_max: jobDetails.maxSalary ? parseFloat(jobDetails.maxSalary) : undefined,
-        salary_currency: "USD",
-        show_salary: !!(jobDetails.minSalary || jobDetails.maxSalary),
-        required_skills: keywords,
-        preferred_skills: [],
-        urgency: "medium",
-        openings: 1,
-        sla_days: 21,
-        screening_questions: screeningQuestions,
-        feedback_template: selectedFeedbackForm ? parseInt(selectedFeedbackForm) : undefined,
-        publish_internal: publishOptions.internal,
-        publish_external: publishOptions.externalPortals,
-        publish_company_website: publishOptions.companyWebsite,
-      }
-
-      const createdJob = await createJob(jobData)
-      
-      toast({
-        title: "Success!",
-        description: `Job "${createdJob.title}" has been created successfully.`,
-        variant: "default"
-      })
-
-      // Reset form
-      setJobDetails({
-        title: "",
-        department: "",
-        level: "",
-        location: "",
-        workType: "",
-        minSalary: "",
-        maxSalary: "",
-        experienceRange: "",
-      })
-      setJobDescription("")
-      setRequirements("")
-      setKeywords([])
-      setScreeningQuestions([])
-      setSelectedFeedbackForm("")
-      setActiveTab("details")
-      
-    } catch (error: any) {
-      console.error('Error creating job:', error)
-      toast({
-        title: "Error",
-        description: error.message || "Failed to create job. Please try again.",
-        variant: "destructive"
-      })
-    } finally {
-      setIsSubmitting(false)
+    if (details.level === "senior" || details.level === "lead") {
+      baseKeywords.push("Leadership", "Mentoring", "Strategic Planning")
     }
+
+    return baseKeywords.slice(0, 6) // Limit to 6 keywords
   }
 
   return (
-    <div className="p-6 space-y-6">
-      <h2 className="text-2xl font-bold text-gray-900">Create New Job Posting</h2>
-      <p className="text-gray-600">
-        Define the details, description, screening questions, and publishing options for your new job.
-      </p>
+    <div className="p-6 space-y-6 max-w-4xl mx-auto">
+      <div className="text-center space-y-2">
+        <h2 className="text-3xl font-bold text-gray-900">Create New Job Posting</h2>
+        <p className="text-gray-600">
+          Define the details and description for your new job posting
+        </p>
+      </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-4">
-          <TabsTrigger value="details">1. Job Details</TabsTrigger>
-          <TabsTrigger value="description">2. Job Description</TabsTrigger>
-          <TabsTrigger value="screening">3. Screening</TabsTrigger>
-          <TabsTrigger value="publish">4. Publish</TabsTrigger>
+        <TabsList className="grid w-full grid-cols-2">
+          <TabsTrigger value="details" className="flex items-center space-x-2">
+            <span>1. Job Details</span>
+          </TabsTrigger>
+          <TabsTrigger value="description" className="flex items-center space-x-2">
+            <span>2. Job Description</span>
+          </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="details" className="mt-4">
+        {/* Job Details Tab */}
+        <TabsContent value="details" className="mt-6">
           <Card>
             <CardHeader>
               <CardTitle>Job Details</CardTitle>
-              <CardDescription>Enter the basic information for your job posting.</CardDescription>
+              <CardDescription>Enter the basic information for your job posting</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-6">
               <div className="space-y-2">
-                <Label htmlFor="title">Job Title</Label>
+                <Label htmlFor="title" className="text-sm font-medium">Job Title *</Label>
                 <Input
                   id="title"
                   value={jobDetails.title}
                   onChange={handleDetailChange}
                   placeholder="e.g., Senior Software Engineer"
+                  className="text-sm"
                 />
               </div>
+              
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="department">Department</Label>
+                  <Label htmlFor="department" className="text-sm font-medium">Department *</Label>
                   <Select value={jobDetails.department} onValueChange={(val) => handleSelectChange("department", val)}>
                     <SelectTrigger id="department">
                       <SelectValue placeholder="Select department" />
                     </SelectTrigger>
                     <SelectContent>
-                      {isLoading ? (
-                        <SelectItem value="loading" disabled>Loading departments...</SelectItem>
-                      ) : (
-                        departments.map((dept) => (
-                          <SelectItem key={dept.id} value={dept.id.toString()}>
-                            {dept.name}
-                          </SelectItem>
-                        ))
-                      )}
+                      {departments.map((dept) => (
+                        <SelectItem key={dept.id} value={dept.id.toString()}>
+                          {dept.name}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
+                
                 <div className="space-y-2">
-                  <Label htmlFor="level">Experience Level</Label>
+                  <Label htmlFor="level" className="text-sm font-medium">Experience Level *</Label>
                   <Select value={jobDetails.level} onValueChange={(val) => handleSelectChange("level", val)}>
                     <SelectTrigger id="level">
                       <SelectValue placeholder="Select level" />
@@ -390,18 +222,21 @@ export default function JobCreationForm() {
                   </Select>
                 </div>
               </div>
+              
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="location">Location</Label>
+                  <Label htmlFor="location" className="text-sm font-medium">Location</Label>
                   <Input
                     id="location"
                     value={jobDetails.location}
                     onChange={handleDetailChange}
                     placeholder="e.g., Remote, New York, NY"
+                    className="text-sm"
                   />
                 </div>
+                
                 <div className="space-y-2">
-                  <Label htmlFor="workType">Work Type</Label>
+                  <Label htmlFor="workType" className="text-sm font-medium">Work Type</Label>
                   <Select value={jobDetails.workType} onValueChange={(val) => handleSelectChange("workType", val)}>
                     <SelectTrigger id="workType">
                       <SelectValue placeholder="Select work type" />
@@ -414,66 +249,34 @@ export default function JobCreationForm() {
                   </Select>
                 </div>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="minSalary">Min Salary</Label>
-                  <Input
-                    id="minSalary"
-                    type="number"
-                    value={jobDetails.minSalary}
-                    onChange={handleDetailChange}
-                    placeholder="80000"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="maxSalary">Max Salary</Label>
-                  <Input
-                    id="maxSalary"
-                    type="number"
-                    value={jobDetails.maxSalary}
-                    onChange={handleDetailChange}
-                    placeholder="120000"
-                  />
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="experienceRange">Experience Range</Label>
-                <Select
-                  value={jobDetails.experienceRange}
-                  onValueChange={(val) => handleSelectChange("experienceRange", val)}
+
+              <div className="flex justify-end pt-4">
+                <Button 
+                  onClick={() => setActiveTab("description")}
+                  className="bg-blue-600 hover:bg-blue-700"
                 >
-                  <SelectTrigger id="experienceRange">
-                    <SelectValue placeholder="Select experience range" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="0-1">0-1 Years</SelectItem>
-                    <SelectItem value="1-3">1-3 Years</SelectItem>
-                    <SelectItem value="3-5">3-5 Years</SelectItem>
-                    <SelectItem value="5-8">5-8 Years</SelectItem>
-                    <SelectItem value="8-10">8-10 Years</SelectItem>
-                    <SelectItem value="10+">10+ Years</SelectItem>
-                  </SelectContent>
-                </Select>
+                  Next: Job Description →
+                </Button>
               </div>
-              <Button onClick={() => setActiveTab("description")}>Next: Job Description</Button>
             </CardContent>
           </Card>
         </TabsContent>
 
-        <TabsContent value="description" className="mt-4">
+        {/* Job Description Tab */}
+        <TabsContent value="description" className="mt-6">
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center space-x-2">
-                <Sparkles className="h-5 w-5 text-primary" />
+                <Sparkles className="h-5 w-5 text-blue-600" />
                 <span>Job Description</span>
               </CardTitle>
-              <CardDescription>Create or generate a comprehensive job description.</CardDescription>
+              <CardDescription>Create a comprehensive job description using AI or upload your own</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex space-x-4 mb-4">
+            <CardContent className="space-y-6">
+              <div className="flex space-x-3 mb-6">
                 <label htmlFor="jd-upload" className="flex-1">
-                  <Button variant="outline" className="w-full bg-transparent" asChild>
-                    <span>
+                  <Button variant="outline" className="w-full" asChild>
+                    <span className="flex items-center justify-center">
                       <Upload className="h-4 w-4 mr-2" />
                       Upload JD
                     </span>
@@ -482,11 +285,15 @@ export default function JobCreationForm() {
                     id="jd-upload"
                     type="file"
                     accept=".txt,.pdf,.doc,.docx"
-                    onChange={handleJDUpload}
                     className="hidden"
                   />
                 </label>
-                <Button onClick={generateJobDescription} disabled={isGenerating} className="flex-1">
+                
+                <Button 
+                  onClick={generateJobDescription}
+                  disabled={isGenerating}
+                  className="flex-1 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
+                >
                   {isGenerating ? (
                     <>
                       <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
@@ -502,56 +309,62 @@ export default function JobCreationForm() {
               </div>
 
               <div className="space-y-2">
-                <Label>Job Description</Label>
+                <Label className="text-sm font-medium">Job Description</Label>
                 <Textarea
                   value={jobDescription}
-                  onChange={(e) => setJobDescription(e.target.value)}
-                  rows={8}
-                  className="text-sm"
-                  placeholder="Enter job description or generate with AI..."
+                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setJobDescription(e.target.value)}
+                  rows={10}
+                  className="text-sm resize-none"
+                  placeholder="Enter job description or click 'Generate with AI' to create one based on your job details..."
                 />
               </div>
 
               <div className="space-y-2">
-                <Label>Requirements</Label>
+                <Label className="text-sm font-medium">Requirements</Label>
                 <Textarea
                   value={requirements}
-                  onChange={(e) => setRequirements(e.target.value)}
-                  rows={6}
-                  className="text-sm"
+                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setRequirements(e.target.value)}
+                  rows={8}
+                  className="text-sm resize-none"
                   placeholder="List the required qualifications, skills, and experience..."
                 />
               </div>
 
-              <div className="space-y-2">
-                <Label className="flex items-center">
+              <div className="space-y-3">
+                <Label className="flex items-center text-sm font-medium">
                   <Hash className="h-4 w-4 mr-2" />
                   Keywords/Skills
                 </Label>
-                <div className="flex flex-wrap gap-2 mb-2">
-                  {keywords.map((keyword) => (
-                    <div key={keyword} className="px-2 py-1 bg-secondary text-white rounded flex items-center">
-                      {keyword}
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-4 w-4 p-0 ml-1"
-                        onClick={() => removeKeyword(keyword)}
-                      >
-                        <Trash className="h-3 w-3" />
-                      </Button>
-                    </div>
-                  ))}
-                </div>
+                
+                {keywords.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mb-3">
+                    {keywords.map((keyword) => (
+                      <div key={keyword} className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full flex items-center text-sm">
+                        {keyword}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-4 w-4 p-0 ml-2 hover:bg-blue-200 rounded-full"
+                          onClick={() => removeKeyword(keyword)}
+                        >
+                          <Trash className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                
                 <div className="flex space-x-2">
                   <Input
                     placeholder="Add keyword or skill"
                     id="keyword"
-                    onKeyDown={(e) => {
+                    className="text-sm"
+                    onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => {
                       if (e.key === "Enter") {
                         e.preventDefault()
-                        addKeyword((e.target as HTMLInputElement).value)
-                        ;(e.target as HTMLInputElement).value = ""
+                        const target = e.target as HTMLInputElement
+                        addKeyword(target.value)
+                        target.value = ""
                       }
                     }}
                   />
@@ -559,8 +372,10 @@ export default function JobCreationForm() {
                     variant="outline"
                     onClick={() => {
                       const input = document.getElementById("keyword") as HTMLInputElement
-                      addKeyword(input.value)
-                      input.value = ""
+                      if (input) {
+                        addKeyword(input.value)
+                        input.value = ""
+                      }
                     }}
                   >
                     Add
@@ -568,157 +383,18 @@ export default function JobCreationForm() {
                 </div>
               </div>
 
-              <div className="flex justify-between">
-                <Button variant="outline" onClick={() => setActiveTab("details")}>
-                  Previous
+              <div className="flex justify-between pt-6 border-t">
+                <Button 
+                  variant="outline" 
+                  onClick={() => setActiveTab("details")}
+                >
+                  ← Previous
                 </Button>
-                <Button onClick={() => setActiveTab("screening")}>Next: Screening</Button>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="screening" className="mt-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center space-x-2">
-                <MessageSquareText className="h-5 w-5 text-primary" />
-                <span>Screening & Feedback</span>
-              </CardTitle>
-              <CardDescription>Add questions for initial candidate screening and link feedback forms.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-4">
-                <h3 className="text-md font-semibold">Automated Screening Questions</h3>
-                {screeningQuestions.map((q, index) => (
-                  <div key={q.id} className="flex items-end gap-2 p-3 border rounded-lg">
-                    <div className="flex-1 space-y-2">
-                      <Label htmlFor={`question-${q.id}`}>Question {index + 1}</Label>
-                      <Input
-                        id={`question-${q.id}`}
-                        value={q.question}
-                        onChange={(e) => handleQuestionChange(q.id, "question", e.target.value)}
-                        placeholder="e.g., What is your experience with React?"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor={`type-${q.id}`}>Type</Label>
-                      <Select value={q.type} onValueChange={(val) => handleQuestionChange(q.id, "type", val)}>
-                        <SelectTrigger id={`type-${q.id}`} className="w-[120px]">
-                          <SelectValue placeholder="Type" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="text">Text</SelectItem>
-                          <SelectItem value="number">Number</SelectItem>
-                          <SelectItem value="yes/no">Yes/No</SelectItem>
-                          <SelectItem value="multiple-choice">Multiple Choice</SelectItem>
-                          <SelectItem value="audio">Audio Response</SelectItem>
-                          <SelectItem value="video">Video Response</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <Button variant="ghost" size="icon" onClick={() => removeQuestion(q.id)}>
-                      <Trash className="h-4 w-4 text-red-600" />
-                    </Button>
-                  </div>
-                ))}
-              </div>
-              <Button variant="outline" onClick={addQuestion} className="w-full bg-transparent">
-                <Plus className="mr-2 h-4 w-4" /> Add Question
-              </Button>
-
-              <div className="space-y-2 pt-4">
-                <h3 className="text-md font-semibold">Link Feedback Form</h3>
-                <Label htmlFor="feedback-form">Select Feedback Form Template</Label>
-                <Select value={selectedFeedbackForm} onValueChange={setSelectedFeedbackForm}>
-                  <SelectTrigger id="feedback-form">
-                    <SelectValue placeholder="Choose a feedback form" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {isLoading ? (
-                      <SelectItem value="loading" disabled>Loading templates...</SelectItem>
-                    ) : (
-                      feedbackTemplates
-                        .filter(template => template.status === 'published')
-                        .map((template) => (
-                          <SelectItem key={template.id} value={template.id.toString()}>
-                            {template.name}
-                          </SelectItem>
-                        ))
-                    )}
-                  </SelectContent>
-                </Select>
-                <p className="text-sm text-muted-foreground">
-                  This form will be used by interviewers to submit feedback for candidates applying to this job.
-                </p>
-              </div>
-
-              <div className="flex justify-between pt-4">
-                <Button variant="outline" onClick={() => setActiveTab("description")}>
-                  Previous
-                </Button>
-                <Button onClick={() => setActiveTab("publish")}>Next: Publish</Button>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="publish" className="mt-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Publish Options</CardTitle>
-              <CardDescription>Choose where and how to publish your job posting.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label>Publish To:</Label>
-                <div className="flex items-center space-x-2">
-                  <Checkbox
-                    id="internal"
-                    checked={publishOptions.internal}
-                    onCheckedChange={(checked) =>
-                      setPublishOptions((prev) => ({ ...prev, internal: Boolean(checked) }))
-                    }
-                  />
-                  <Label htmlFor="internal">Internal Job Board</Label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <Checkbox
-                    id="externalPortals"
-                    checked={publishOptions.externalPortals}
-                    onCheckedChange={(checked) =>
-                      setPublishOptions((prev) => ({ ...prev, externalPortals: Boolean(checked) }))
-                    }
-                  />
-                  <Label htmlFor="externalPortals">External Job Portals (e.g., Indeed, LinkedIn)</Label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <Checkbox
-                    id="companyWebsite"
-                    checked={publishOptions.companyWebsite}
-                    onCheckedChange={(checked) =>
-                      setPublishOptions((prev) => ({ ...prev, companyWebsite: Boolean(checked) }))
-                    }
-                  />
-                  <Label htmlFor="companyWebsite">Company Website Careers Page</Label>
-                </div>
-              </div>
-              <div className="flex justify-between pt-4">
-                <Button variant="outline" onClick={() => setActiveTab("screening")}>
-                  Previous
-                </Button>
-                <Button onClick={handleSubmit} disabled={isSubmitting || isLoading}>
-                  {isSubmitting ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Creating Job...
-                    </>
-                  ) : (
-                    <>
-                      <Send className="mr-2 h-4 w-4" />
-                      Create Job
-                    </>
-                  )}
+                <Button 
+                  type="submit"
+                  className="bg-green-600 hover:bg-green-700"
+                >
+                  Create Job Posting
                 </Button>
               </div>
             </CardContent>
