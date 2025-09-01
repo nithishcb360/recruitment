@@ -1,8 +1,6 @@
 "use client"
 
 import type React from "react"
-import { Upload } from "lucide-react" // New: Import Upload component
-
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -12,8 +10,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Plus, Send, Trash, Sparkles, RefreshCw, Hash, MessageSquareText, Loader2 } from "lucide-react"
-import { getDepartments, createJob, type Department, type JobCreateData } from "@/lib/api/jobs"
+import { Plus, Send, Trash, Sparkles, RefreshCw, Hash, MessageSquareText, Loader2, Upload } from "lucide-react"
+import { getDepartments, createJob, parseJD, generateJD, type Department, type JobCreateData, type ParsedJD, type GenerateJDRequest } from "@/lib/api/jobs"
 import { getFeedbackTemplates, type FeedbackTemplate } from "@/lib/api/feedback-templates"
 import { useToast } from "@/hooks/use-toast"
 
@@ -112,36 +110,138 @@ export default function JobCreationForm() {
   }
 
   const generateJobDescription = async () => {
+    // Validate required fields
+    if (!jobDetails.title) {
+      toast({
+        title: "Missing Information",
+        description: "Please enter a job title before generating the description.",
+        variant: "destructive"
+      })
+      return
+    }
+
     setIsGenerating(true)
-    // Simulate AI generation
-    setTimeout(() => {
-      setJobDescription(`We are seeking a highly skilled Senior Frontend Developer to join our dynamic engineering team. In this role, you will be responsible for developing and maintaining cutting-edge web applications using modern JavaScript frameworks.
+    
+    try {
+      // Get department name from ID
+      const selectedDepartment = departments.find(d => d.id.toString() === jobDetails.department)
+      const departmentName = selectedDepartment?.name || ''
+      
+      const generateRequest: GenerateJDRequest = {
+        title: jobDetails.title,
+        department: departmentName,
+        level: jobDetails.level || 'mid',
+        location: jobDetails.location || 'Remote',
+        work_type: jobDetails.workType || 'remote'
+      }
 
-Key Responsibilities:
-• Develop responsive and performant web applications using React, TypeScript, and Next.js
-• Collaborate with UX/UI designers to implement pixel-perfect designs
-• Optimize applications for maximum speed and scalability
-• Write clean, maintainable, and well-documented code
-• Participate in code reviews and mentor junior developers
-• Stay up-to-date with the latest frontend technologies and best practices
-
-Required Qualifications:
-• 5+ years of experience in frontend development
-• Expert knowledge of React, TypeScript, and modern JavaScript (ES6+)
-• Experience with state management libraries (Redux, Zustand, or similar)
-• Proficiency in CSS-in-JS solutions and responsive design
-• Experience with testing frameworks (Jest, React Testing Library)
-• Strong understanding of web performance optimization
-• Bachelor's degree in Computer Science or equivalent experience
-
-Preferred Qualifications:
-• Experience with Next.js and server-side rendering
-• Knowledge of GraphQL and modern API integration
-• Experience with CI/CD pipelines and deployment processes
-• Familiarity with design systems and component libraries
-• Previous experience in a fast-paced startup environment.`)
+      const response = await generateJD(generateRequest)
+      
+      if (response.success && response.data) {
+        // Update form fields with generated content
+        setJobDescription(response.data.description)
+        setRequirements(response.data.requirements)
+        
+        // Also set responsibilities in a separate field if you have one
+        // For now, we'll include responsibilities in the main description
+        if (response.data.responsibilities) {
+          setJobDescription(prev => prev + '\n\n' + response.data.responsibilities)
+        }
+        
+        toast({
+          title: "Success!",
+          description: response.ai_generated 
+            ? "Job description generated successfully using AI." 
+            : "Job description generated using templates.",
+          variant: "default"
+        })
+      } else {
+        throw new Error('Failed to generate job description')
+      }
+      
+    } catch (error: any) {
+      console.error('AI generation error:', error)
+      
+      let errorMessage = "Failed to generate job description. Please try again."
+      
+      // Handle specific error types
+      if (error?.response?.data?.detail) {
+        errorMessage = error.response.data.detail
+      } else if (error?.detail) {
+        errorMessage = error.detail
+      } else if (error?.message) {
+        errorMessage = error.message
+      }
+      
+      // Check if it's an API key issue - fallback gracefully
+      if (errorMessage.includes('API key') || errorMessage.includes('OpenAI')) {
+        errorMessage = "AI service is temporarily unavailable. Template generation was used instead."
+      }
+      
+      toast({
+        title: "Generation Error",
+        description: errorMessage,
+        variant: "destructive"
+      })
+    } finally {
       setIsGenerating(false)
-    }, 2000)
+    }
+  }
+
+  const handleJDUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    // Check file type
+    const allowedTypes = ['text/plain', 'application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']
+    if (!allowedTypes.includes(file.type)) {
+      toast({
+        title: "Invalid file type",
+        description: "Please upload a .txt, .pdf, .doc, or .docx file",
+        variant: "destructive"
+      })
+      return
+    }
+
+    // Check file size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      toast({
+        title: "File too large",
+        description: "Please upload a file smaller than 5MB",
+        variant: "destructive"
+      })
+      return
+    }
+
+    try {
+      setIsGenerating(true)
+      
+      // Use the API client to upload and parse the file
+      const result = await parseJD(file)
+      
+      // Update the form fields with parsed content
+      setJobDescription(result.description || '')
+      setRequirements(result.requirements || '')
+      
+      toast({
+        title: "Success",
+        description: "Job description uploaded and parsed successfully",
+        variant: "default"
+      })
+    } catch (error: any) {
+      console.error('JD upload error:', error)
+      toast({
+        title: "Error",
+        description: error.detail || error.message || "Failed to upload job description",
+        variant: "destructive"
+      })
+    } finally {
+      setIsGenerating(false)
+      // Reset the input
+      if (e.target) {
+        e.target.value = ''
+      }
+    }
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -371,10 +471,21 @@ Preferred Qualifications:
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex space-x-4 mb-4">
-                <Button variant="outline" className="flex-1 bg-transparent">
-                  <Upload className="h-4 w-4 mr-2" />
-                  Upload JD
-                </Button>
+                <label htmlFor="jd-upload" className="flex-1">
+                  <Button variant="outline" className="w-full bg-transparent" asChild>
+                    <span>
+                      <Upload className="h-4 w-4 mr-2" />
+                      Upload JD
+                    </span>
+                  </Button>
+                  <input
+                    id="jd-upload"
+                    type="file"
+                    accept=".txt,.pdf,.doc,.docx"
+                    onChange={handleJDUpload}
+                    className="hidden"
+                  />
+                </label>
                 <Button onClick={generateJobDescription} disabled={isGenerating} className="flex-1">
                   {isGenerating ? (
                     <>
